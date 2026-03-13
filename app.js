@@ -1,11 +1,14 @@
-/* ─── Config ─────────────────────────────────────────────────
-   Credentials are stored in localStorage (browser only, never sent anywhere else).
-   JSONBin free tier: https://jsonbin.io
-   ──────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   dp-vault — app.js
+   Storage : data.json in your GitHub repo (Contents API)
+   Credentials : localStorage (browser-only, never transmitted
+                 except directly to api.github.com)
+   ═══════════════════════════════════════════════════════════ */
 
-const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
-const LS_KEY_APIKEY = 'dp_vault_apikey';
-const LS_KEY_BINID  = 'dp_vault_binid';
+const GITHUB_API = 'https://api.github.com';
+const LS_TOKEN   = 'dp_vault_gh_token';
+const LS_REPO    = 'dp_vault_gh_repo';
+const DATA_PATH  = 'data.json';
 
 const PHASES = [
   'Phase 1 — Foundations',
@@ -15,307 +18,357 @@ const PHASES = [
 ];
 
 // ── State ────────────────────────────────────────────────────
-let allEntries    = [];
-let activeTab     = 'all';
-let activeFilter  = 'all';
-let apiKey        = localStorage.getItem(LS_KEY_APIKEY) || '';
-let binId         = localStorage.getItem(LS_KEY_BINID)  || '';
+let entries      = [];
+let activeTab    = 'all';
+let activeFilter = 'all';
+let ghToken      = localStorage.getItem(LS_TOKEN) || '';
+let ghRepo       = localStorage.getItem(LS_REPO)  || '';
+let fileSha      = '';
 
 // ── Boot ─────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
-  if (!apiKey || !binId) {
-    document.getElementById('configOverlay').classList.add('open');
-  } else {
-    loadData();
-  }
+  loadData();
 });
 
-// ── Config save ───────────────────────────────────────────────
-function saveConfig() {
-  const k = document.getElementById('cfgApiKey').value.trim();
-  const b = document.getElementById('cfgBinId').value.trim();
-  if (!k || !b) { showToast('Please fill in both fields'); return; }
-  apiKey = k; binId = b;
-  localStorage.setItem(LS_KEY_APIKEY, k);
-  localStorage.setItem(LS_KEY_BINID,  b);
-  document.getElementById('configOverlay').classList.remove('open');
+// ── GitHub API ────────────────────────────────────────────────
+async function ghGet(path) {
+  const r = await fetch(`${GITHUB_API}/repos/${ghRepo}/contents/${path}`, {
+    headers: { 'Authorization':`Bearer ${ghToken}`, 'Accept':'application/vnd.github+json' }
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+async function ghPut(path, content, sha, message) {
+  const r = await fetch(`${GITHUB_API}/repos/${ghRepo}/contents/${path}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization':`Bearer ${ghToken}`,
+      'Accept':'application/vnd.github+json',
+      'Content-Type':'application/json',
+    },
+    body: JSON.stringify({
+      message,
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(content,null,2)))),
+      ...(sha ? { sha } : {}),
+    })
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(()=>({}));
+    throw new Error(err.message || `PUT failed: ${r.status}`);
+  }
+  return r.json();
+}
+
+// ── Load ──────────────────────────────────────────────────────
+async function loadData() {
+  if (!ghToken || !ghRepo) {
+    setSub('not connected — click ⚙ settings');
+    entries = [];
+    renderAll();
+    return;
+  }
+  setSub('syncing...');
+  try {
+    const file = await ghGet(DATA_PATH);
+    fileSha    = file.sha;
+    const raw  = decodeURIComponent(escape(atob(file.content.replace(/\n/g,''))));
+    entries    = JSON.parse(raw)?.entries || [];
+    renderAll();
+    showToast('synced ✓');
+  } catch(e) {
+    if (e.message.startsWith('404')) {
+      entries = []; fileSha = '';
+      renderAll();
+      setSub('no data yet — complete your first exercise');
+    } else {
+      setSub('sync error — check token & repo');
+      showToast('error: ' + e.message);
+      entries = [];
+      renderAll();
+    }
+  }
+}
+
+// ── Save ──────────────────────────────────────────────────────
+async function saveToGitHub(entry) {
+  if (!ghToken || !ghRepo) { showToast('error: not connected'); return false; }
+  const updated = [...entries, { ...entry, ts: entry.ts || Date.now() }];
+  try {
+    const res = await ghPut(
+      DATA_PATH, { entries: updated }, fileSha,
+      `feat(vault): ${entry.type} — ${entry.title || entry.topic || 'exercise'}`
+    );
+    fileSha = res.content.sha;
+    entries = updated;
+    renderAll();
+    showToast('saved → github ✓');
+    return true;
+  } catch(e) {
+    showToast('save failed: ' + e.message);
+    return false;
+  }
+}
+
+// ── Import ────────────────────────────────────────────────────
+function openImport() {
+  document.getElementById('importInput').value = '';
+  document.getElementById('importError').textContent = '';
+  document.getElementById('importOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('importInput').focus(), 80);
+}
+function closeImport() { document.getElementById('importOverlay').classList.remove('open'); }
+
+async function doImport() {
+  const raw   = document.getElementById('importInput').value.trim();
+  const errEl = document.getElementById('importError');
+  errEl.textContent = '';
+  if (!raw) { errEl.textContent = '// error: empty input'; return; }
+  let entry;
+  try { entry = JSON.parse(raw); }
+  catch(e) { errEl.textContent = '// error: invalid JSON'; return; }
+  if (!['code','mcq','uml'].includes(entry.type)) {
+    errEl.textContent = '// error: type must be code | mcq | uml';
+    return;
+  }
+  closeImport();
+  const ok = await saveToGitHub(entry);
+  if (!ok) openImport();
+}
+
+// ── Settings ──────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('cfgToken').value = ghToken || '';
+  document.getElementById('cfgRepo').value  = ghRepo  || '';
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+function saveSettings() {
+  const t = document.getElementById('cfgToken').value.trim();
+  const r = document.getElementById('cfgRepo').value.trim();
+  if (!t || !r) { showToast('error: fill in both fields'); return; }
+  ghToken = t; ghRepo = r;
+  localStorage.setItem(LS_TOKEN, ghToken);
+  localStorage.setItem(LS_REPO,  ghRepo);
+  closeSettings();
   loadData();
 }
 
-// ── Fetch data from JSONBin ───────────────────────────────────
-async function loadData() {
-  setHeaderSub('Syncing...');
-  try {
-    const res = await fetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-      headers: { 'X-Master-Key': apiKey }
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    allEntries = Array.isArray(json.record?.entries) ? json.record.entries : [];
-    renderAll();
-    showToast('Vault synced ✓');
-  } catch (e) {
-    console.error(e);
-    setHeaderSub('Could not connect — check your credentials');
-    showToast('Sync failed: ' + e.message);
-    // Show demo data if fetch fails
-    allEntries = getDemoEntries();
-    renderAll();
-  }
+// ── Export / Clear ────────────────────────────────────────────
+function exportAll() {
+  const blob = new Blob([JSON.stringify({entries},null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `dp-vault-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('exported ✓');
 }
 
-// ── Render everything ─────────────────────────────────────────
+async function clearAll() {
+  if (!confirm('clear all entries in data.json? this cannot be undone.')) return;
+  try {
+    const res = await ghPut(DATA_PATH,{entries:[]},fileSha,'chore(vault): clear all entries');
+    fileSha = res.content.sha;
+    entries = [];
+    renderAll();
+    showToast('cleared ✓');
+  } catch(e) { showToast('clear failed: ' + e.message); }
+}
+
+// ── Render ────────────────────────────────────────────────────
 function renderAll() {
   renderStats();
-  renderFilterChips();
+  renderChips();
   renderPanels();
   renderProgress();
 }
 
 function renderStats() {
-  const codes   = allEntries.filter(e => e.type === 'code');
-  const mcqs    = allEntries.filter(e => e.type === 'mcq');
-  const correct = mcqs.filter(e => e.correct).length;
-  const pct     = mcqs.length ? Math.round(correct / mcqs.length * 100) : null;
+  const codes   = entries.filter(e=>e.type==='code');
+  const mcqs    = entries.filter(e=>e.type==='mcq');
+  const correct = mcqs.filter(e=>e.correct).length;
+  const pct     = mcqs.length ? Math.round(correct/mcqs.length*100) : null;
+  const streak  = calcStreak();
 
-  document.querySelector('#sc-total .stat-num').textContent  = allEntries.length || '0';
-  document.querySelector('#sc-code  .stat-num').textContent  = codes.length      || '0';
-  document.querySelector('#sc-mcq   .stat-num').textContent  = mcqs.length       || '0';
-  document.querySelector('#sc-score .stat-num').textContent  = pct !== null ? pct + '%' : '—';
-
-  setHeaderSub(
-    allEntries.length === 0
-      ? 'No exercises yet — start learning!'
-      : `${allEntries.length} exercise${allEntries.length !== 1 ? 's' : ''} across ${[...new Set(allEntries.map(e => e.phase))].filter(Boolean).length} phase${[...new Set(allEntries.map(e => e.phase))].filter(Boolean).length !== 1 ? 's' : ''}`
-  );
+  set('sc-total',  entries.length);
+  set('sc-code',   codes.length);
+  set('sc-mcq',    mcqs.length);
+  set('sc-score',  pct !== null ? pct+'%' : '—');
+  set('sc-streak', streak+'d');
+  set('tabStatus', `${entries.length} entr${entries.length===1?'y':'ies'}`);
+  setSub(statusLine());
 }
 
-function renderFilterChips() {
-  const phases = [...new Set(allEntries.map(e => e.phase))].filter(Boolean);
-  const row = document.getElementById('filterRow');
-  row.innerHTML = ['All', ...phases].map(p =>
-    `<button class="chip${(p === 'All' && activeFilter === 'all') || p === activeFilter ? ' active' : ''}"
-      onclick="setFilter('${p === 'All' ? 'all' : p}')">${p}</button>`
-  ).join('');
+function statusLine() {
+  if (!entries.length) return 'no exercises yet — start learning';
+  const phases = [...new Set(entries.map(e=>e.phase).filter(Boolean))];
+  return `${entries.length} entries · ${phases.length} phases · ${calcStreak()}d streak · ${ghRepo}`;
+}
+
+function calcStreak() {
+  if (!entries.length) return 0;
+  const days = new Set(entries.map(e=>new Date(e.ts).toDateString()));
+  let s=0, d=new Date();
+  while(days.has(d.toDateString())){ s++; d.setDate(d.getDate()-1); }
+  return s;
+}
+
+function renderChips() {
+  const phases = [...new Set(entries.map(e=>e.phase).filter(Boolean))];
+  document.getElementById('filterRow').innerHTML =
+    ['all',...phases].map(p => {
+      const active = p===activeFilter ? ' active' : '';
+      return `<button class="chip${active}" onclick="setFilter('${esc(p)}')">${esc(p)}</button>`;
+    }).join('');
 }
 
 function renderPanels() {
-  const filtered = activeFilter === 'all'
-    ? allEntries
-    : allEntries.filter(e => e.phase === activeFilter);
-  const sorted = [...filtered].reverse(); // newest first
-
-  ['all', 'code', 'mcq', 'uml'].forEach(tab => {
-    const panelId = `panel-${tab}`;
-    const subset  = tab === 'all' ? sorted : sorted.filter(e => e.type === tab);
-    document.getElementById(panelId).innerHTML = subset.length
-      ? `<div class="entries-grid">${subset.map((e, i) => renderEntryCard(e, i, tab)).join('')}</div>`
-      : renderEmpty(tab);
+  const filtered = activeFilter==='all' ? entries : entries.filter(e=>e.phase===activeFilter);
+  const sorted   = [...filtered].reverse();
+  ['all','code','mcq','uml'].forEach(tab => {
+    const rows = tab==='all' ? sorted : sorted.filter(e=>e.type===tab);
+    document.getElementById(`panel-${tab}`).innerHTML = rows.length
+      ? listHTML(rows) : emptyHTML(tab);
   });
 }
 
-function renderEntryCard(e, i, ns) {
-  const id    = `${ns}_${i}`;
-  const badge = e.type === 'code' ? 'badge-code' : e.type === 'mcq' ? 'badge-mcq' : 'badge-uml';
-  const delay = Math.min(i * 0.04, 0.4);
-
-  let resultRow = '';
-  if (e.type === 'mcq') {
-    resultRow = `<div class="entry-result">
-      <div class="result-dot ${e.correct ? 'ok' : 'bad'}"></div>
-      <div class="result-text">${e.correct ? 'Correct' : 'Incorrect'} — ${e.topic || ''}</div>
-    </div>`;
-  } else if (e.type === 'code') {
-    resultRow = `<div class="entry-result">
-      <div class="result-dot ok"></div>
-      <div class="result-text">${e.topic || ''}</div>
-    </div>`;
-  }
-
-  return `<div class="entry-card" style="animation-delay:${delay}s" onclick="openModal(${JSON.stringify(JSON.stringify(e))})">
-    <div class="entry-head">
-      <span class="entry-type-badge ${badge}">${e.type}</span>
-      <span class="entry-title">${esc(e.title || 'Untitled exercise')}</span>
-      <span class="entry-phase">${esc(e.phase || '')}</span>
-      <span class="entry-date">${formatDate(e.ts)}</span>
+function listHTML(rows) {
+  return `<div class="list-header">
+      <span class="lh-type">type</span>
+      <span class="lh-title">title</span>
+      <span class="lh-topic">topic</span>
+      <span class="lh-phase">phase</span>
+      <span class="lh-result">result</span>
+      <span class="lh-date">date</span>
     </div>
-    ${resultRow}
-  </div>`;
-}
-
-function renderEmpty(tab) {
-  const msgs = {
-    all:  ['[ ]', 'No exercises saved yet.<br>Complete an exercise in your Claude session and it will appear here.'],
-    code: ['</>', 'No code submissions yet.<br>Write some C++ in your Claude session!'],
-    mcq:  ['?',   'No MCQs answered yet.<br>Answer a quick-check in your Claude session.'],
-    uml:  ['⊞',   'No UML diagrams yet.<br>Draw a class diagram in your Claude session.'],
-  };
-  const [icon, msg] = msgs[tab] || msgs.all;
-  return `<div class="empty"><div class="empty-icon">${icon}</div>${msg}</div>`;
-}
-
-// ── Progress panel ────────────────────────────────────────────
-function renderProgress() {
-  const phaseData = PHASES.map(phase => {
-    const items   = allEntries.filter(e => e.phase === phase);
-    const topics  = [...new Set(items.map(e => e.topic).filter(Boolean))];
-    const maxEx   = 8; // rough target per phase
-    return { phase, count: items.length, topics, pct: Math.min(Math.round(items.length / maxEx * 100), 100) };
-  });
-
-  document.getElementById('progressGrid').innerHTML = phaseData.map(d => `
-    <div class="progress-card">
-      <div class="progress-card-header">
-        <div class="progress-card-title">${d.phase}</div>
-        <div class="progress-card-count">${d.count} exercise${d.count !== 1 ? 's' : ''}</div>
-      </div>
-      <div class="progress-bar-wrap">
-        <div class="progress-bar-fill" style="width:${d.pct}%"></div>
-      </div>
-      <div class="progress-topics">
-        ${d.topics.length
-          ? d.topics.map(t => `<span class="topic-chip done">${esc(t)}</span>`).join('')
-          : '<span class="topic-chip">Not started</span>'}
-      </div>
-    </div>`
-  ).join('');
-}
-
-// ── Modal ─────────────────────────────────────────────────────
-function openModal(jsonStr) {
-  const e = JSON.parse(jsonStr);
-  document.getElementById('modalTitle').textContent = e.title || 'Exercise detail';
-
-  let body = `<div class="modal-meta">
-    <span class="meta-pill">${e.type?.toUpperCase()}</span>
-    <span class="meta-pill">${esc(e.phase || '—')}</span>
-    <span class="meta-pill">${esc(e.topic || '—')}</span>
-    <span class="meta-pill">${formatDate(e.ts)}</span>
-  </div>`;
-
-  if (e.type === 'code') {
-    body += `
-      <div class="code-block">
-        <div class="code-block-header">
-          <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
-          <span class="code-lang">C++</span>
-        </div>
-        <pre>${esc(e.content || '')}</pre>
-      </div>
-      ${e.feedback ? `<div class="feedback-block good"><strong>Review:</strong><br>${esc(e.feedback)}</div>` : ''}`;
-  } else if (e.type === 'mcq') {
-    body += `<div class="mcq-result-block">
-      <div class="mcq-question">${esc(e.question || '')}</div>
-      <div class="mcq-answer-row ${e.correct ? 'correct' : 'wrong'}">
-        ${e.correct ? '✓' : '✗'} ${esc(e.answer || '')}
-      </div>
-      ${e.explanation ? `<div class="feedback-block ${e.correct ? 'good' : 'bad'}">${esc(e.explanation)}</div>` : ''}
+    <div class="entries-list">
+      ${rows.map((e,i)=>rowHTML(e,i)).join('')}
     </div>`;
+}
+
+function rowHTML(e, i) {
+  const delay = Math.min(i*0.025, 0.3);
+  const enc   = encodeURIComponent(JSON.stringify(e));
+  let result='—', rClass='neu';
+  if (e.type==='mcq')  { result=e.correct?'pass':'fail'; rClass=e.correct?'ok':'bad'; }
+  else if (e.type==='code') { result='done'; rClass='ok'; }
+  else { result='saved'; rClass='neu'; }
+
+  return `<div class="entry-row type-${e.type}" style="animation-delay:${delay}s"
+    onclick="openDetail('${enc}')">
+    <span class="entry-type">${e.type}</span>
+    <span class="entry-title">${esc(e.title||'untitled')}</span>
+    <span class="entry-topic">${esc(e.topic||'—')}</span>
+    <span class="entry-phase">${esc(e.phase||'—')}</span>
+    <span class="entry-result ${rClass}">${result}</span>
+    <span class="entry-date">${fmtDate(e.ts)}</span>
+  </div>`;
+}
+
+function emptyHTML(tab) {
+  const map = {
+    all:  ['// no entries yet','// complete an exercise with Claude','// click ⊕ import to save it here'],
+    code: ['// no code submissions yet'],
+    mcq:  ['// no mcq answers yet'],
+    uml:  ['// no uml diagrams yet'],
+  };
+  return `<div class="empty">${(map[tab]||map.all).map(l=>`<span class="empty-line comment">${l}</span>`).join('')}</div>`;
+}
+
+// ── Progress ──────────────────────────────────────────────────
+function renderProgress() {
+  document.getElementById('progressGrid').innerHTML =
+    `<div class="prog-grid">` +
+    PHASES.map(phase => {
+      const items  = entries.filter(e=>e.phase===phase);
+      const topics = [...new Set(items.map(e=>e.topic).filter(Boolean))];
+      const pct    = Math.min(Math.round(items.length/8*100),100);
+      return `<div class="prog-card">
+        <div class="prog-head">
+          <span class="prog-name">${phase}</span>
+          <span class="prog-count">${items.length} / 8</span>
+        </div>
+        <div class="prog-bar-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+        <div class="prog-topics">
+          ${topics.length
+            ? topics.map(t=>`<span class="t-chip done">${esc(t)}</span>`).join('')
+            : '<span class="t-chip">// not started</span>'}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+// ── Detail modal ──────────────────────────────────────────────
+function openDetail(enc) {
+  const e = JSON.parse(decodeURIComponent(enc));
+  document.getElementById('detailTitle').textContent = `[${e.type}] ${e.title||'exercise detail'}`;
+
+  let body = `<div class="detail-meta">
+    <span class="meta-tag type-${e.type}">${e.type}</span>
+    <span class="meta-tag">${esc(e.phase||'—')}</span>
+    <span class="meta-tag">${esc(e.topic||'—')}</span>
+    <span class="meta-tag">${fmtDate(e.ts)}</span>
+  </div>`;
+
+  if (e.type==='code') {
+    body += `<div class="code-block">
+      <div class="code-block-header">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <span class="code-lang">c++</span>
+      </div>
+      <pre>${esc(e.content||'// no code recorded')}</pre>
+    </div>
+    ${e.feedback?`<div class="fb ok">// ${esc(e.feedback)}</div>`:''}`;
+  } else if (e.type==='mcq') {
+    body += `<div class="mcq-question">${esc(e.question||'')}</div>
+    <div class="mcq-ans ${e.correct?'ok':'bad'}">${e.correct?'✓':'✗'} ${esc(e.answer||'')}</div>
+    ${e.explanation?`<div class="fb ${e.correct?'ok':'bad'}">${esc(e.explanation)}</div>`:''}`;
   } else {
-    body += `<div class="feedback-block good">${esc(e.content || 'UML diagram submitted.')}</div>`;
+    body += `<div class="fb info">// ${esc(e.content||'uml diagram submitted')}</div>`;
   }
 
-  document.getElementById('modalBody').innerHTML = body;
-  document.getElementById('modal').classList.add('open');
-  document.getElementById('modalBackdrop').classList.add('open');
+  document.getElementById('detailBody').innerHTML = body;
+  document.getElementById('detailOverlay').classList.add('open');
 }
-
-function closeModal() {
-  document.getElementById('modal').classList.remove('open');
-  document.getElementById('modalBackdrop').classList.remove('open');
-}
+function closeDetail() { document.getElementById('detailOverlay').classList.remove('open'); }
+function closeDetailOuter(evt) { if(evt.target===document.getElementById('detailOverlay')) closeDetail(); }
 
 // ── Tabs ──────────────────────────────────────────────────────
 function setupTabs() {
-  document.querySelectorAll('.nav-tab').forEach(btn => {
+  document.querySelectorAll('.tab[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       activeTab = btn.dataset.tab;
-      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab[data-tab]').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
       document.getElementById(`panel-${activeTab}`).classList.add('active');
     });
   });
 }
 
-// ── Filter ────────────────────────────────────────────────────
-function setFilter(f) {
-  activeFilter = f;
-  renderFilterChips();
-  renderPanels();
-}
+function setFilter(f) { activeFilter=f; renderChips(); renderPanels(); }
 
 // ── Helpers ───────────────────────────────────────────────────
+const set    = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+const setSub = msg => set('headerSub', msg);
+
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function formatDate(ts) {
+function fmtDate(ts) {
   if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
-    + ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
-}
-
-function setHeaderSub(msg) {
-  document.getElementById('headerSub').textContent = msg;
+  return new Date(ts)
+    .toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'})
+    .toLowerCase().replace(/ /g,'-');
 }
 
 function showToast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.textContent = '> ' + msg;
   t.classList.add('show');
   clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove('show'), 2800);
+  t._t = setTimeout(()=>t.classList.remove('show'), 2600);
 }
-
-// ── Demo entries (shown on connection failure for preview) ────
-function getDemoEntries() {
-  return [
-    { type:'code',  title:'Strategy Pattern — PaymentProcessor refactor', phase:'Phase 3 — Patterns', topic:'Strategy', ts: Date.now()-86400000*2, content:'// Demo entry\nclass IPaymentStrategy {\npublic:\n  virtual void pay(double amount) = 0;\n};', feedback:'Good use of pure virtual interface.' },
-    { type:'mcq',   title:'SRP quick check', phase:'Phase 2 — SOLID', topic:'SRP', ts: Date.now()-86400000, question:'Which principle says a class should have one reason to change?', answer:'Single Responsibility Principle', correct:true, explanation:'SRP: one responsibility = one reason to change.' },
-    { type:'uml',   title:'Observer Pattern UML', phase:'Phase 3 — Patterns', topic:'Observer', ts: Date.now()-3600000, content:'Drew ISubject, ConcreteSubject, IObserver, ConcreteObserver with correct relationships.' },
-  ];
-}
-
-/* ─── PUBLIC API ─────────────────────────────────────────────
-   Called by Claude's exercise widgets via postMessage or direct
-   window.vaultPost(entry) when embedded in same origin.
-
-   For cross-origin posting from Claude widgets, we listen for
-   postMessage events with { type: 'VAULT_SAVE', entry: {...} }
-   ──────────────────────────────────────────────────────────── */
-window.vaultPost = async function(entry) {
-  if (!apiKey || !binId) {
-    showToast('Vault not connected — open Settings');
-    return { ok: false };
-  }
-  try {
-    // Fetch current bin
-    const getRes = await fetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-      headers: { 'X-Master-Key': apiKey }
-    });
-    const current = await getRes.json();
-    const entries = Array.isArray(current.record?.entries) ? current.record.entries : [];
-
-    // Append new entry
-    entries.push({ ...entry, ts: entry.ts || Date.now() });
-
-    // Write back
-    await fetch(`${JSONBIN_BASE}/b/${binId}`, {
-      method:  'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey },
-      body:    JSON.stringify({ entries })
-    });
-
-    allEntries = entries;
-    renderAll();
-    showToast('Saved to vault!');
-    return { ok: true };
-  } catch(err) {
-    console.error(err);
-    showToast('Save failed: ' + err.message);
-    return { ok: false, error: err.message };
-  }
-};

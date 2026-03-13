@@ -3,105 +3,141 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Design Patterns Vault</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<title>dp-vault</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="bg-grid"></div>
-<div class="bg-glow"></div>
+<div class="scanlines"></div>
 
-<header>
-  <div class="header-inner">
-    <div class="brand">
-      <div class="brand-mark">⬡</div>
-      <div>
-        <div class="brand-name">Design Patterns <em>Vault</em></div>
-        <div class="brand-sub" id="headerSub">Loading your progress...</div>
-      </div>
-    </div>
-    <nav class="nav-tabs" id="navTabs">
-      <button class="nav-tab active" data-tab="all">All</button>
-      <button class="nav-tab" data-tab="code">Code</button>
-      <button class="nav-tab" data-tab="mcq">MCQ</button>
-      <button class="nav-tab" data-tab="uml">UML</button>
-      <button class="nav-tab" data-tab="progress">Progress</button>
-    </nav>
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-icon">◆</span>
+    <span class="topbar-title">dp-vault</span>
+    <span class="topbar-sep">—</span>
+    <span class="topbar-sub" id="headerSub">initializing...</span>
   </div>
-</header>
-
-<main>
-
-  <!-- Stats row -->
-  <section class="stats-row" id="statsRow">
-    <div class="stat-card" id="sc-total">
-      <div class="stat-num">—</div>
-      <div class="stat-label">Total exercises</div>
-    </div>
-    <div class="stat-card" id="sc-code">
-      <div class="stat-num">—</div>
-      <div class="stat-label">Code submissions</div>
-    </div>
-    <div class="stat-card" id="sc-mcq">
-      <div class="stat-num">—</div>
-      <div class="stat-label">MCQs answered</div>
-    </div>
-    <div class="stat-card accent" id="sc-score">
-      <div class="stat-num">—</div>
-      <div class="stat-label">MCQ accuracy</div>
-    </div>
-  </section>
-
-  <!-- Filter chips -->
-  <div class="filter-row" id="filterRow"></div>
-
-  <!-- Content panels -->
-  <div id="panel-all"   class="panel active"></div>
-  <div id="panel-code"  class="panel"></div>
-  <div id="panel-mcq"   class="panel"></div>
-  <div id="panel-uml"   class="panel"></div>
-  <div id="panel-progress" class="panel">
-    <div class="progress-grid" id="progressGrid"></div>
+  <div class="topbar-right">
+    <button class="tb-btn" onclick="loadData()">↻ sync</button>
+    <button class="tb-btn" onclick="openImport()">⊕ import</button>
+    <button class="tb-btn" onclick="exportAll()">↓ export</button>
+    <button class="tb-btn danger" onclick="clearAll()">✕ clear</button>
+    <button class="tb-btn settings" onclick="openSettings()">⚙ settings</button>
   </div>
+</div>
 
+<!-- Tab bar -->
+<div class="tabbar">
+  <button class="tab active" data-tab="all">all</button>
+  <button class="tab" data-tab="code">code</button>
+  <button class="tab" data-tab="mcq">mcq</button>
+  <button class="tab" data-tab="uml">uml</button>
+  <button class="tab" data-tab="progress">progress</button>
+  <div class="tab-fill"></div>
+  <span class="tab-status" id="tabStatus">0 entries</span>
+</div>
+
+<!-- Stats strip -->
+<div class="stats-strip">
+  <div class="stat-item">
+    <span class="stat-key">total</span>
+    <span class="stat-val" id="sc-total">0</span>
+  </div>
+  <div class="stat-sep">│</div>
+  <div class="stat-item">
+    <span class="stat-key">code</span>
+    <span class="stat-val" id="sc-code">0</span>
+  </div>
+  <div class="stat-sep">│</div>
+  <div class="stat-item">
+    <span class="stat-key">mcq</span>
+    <span class="stat-val" id="sc-mcq">0</span>
+  </div>
+  <div class="stat-sep">│</div>
+  <div class="stat-item">
+    <span class="stat-key">accuracy</span>
+    <span class="stat-val accent" id="sc-score">—</span>
+  </div>
+  <div class="stat-sep">│</div>
+  <div class="stat-item">
+    <span class="stat-key">streak</span>
+    <span class="stat-val green" id="sc-streak">0d</span>
+  </div>
+</div>
+
+<!-- Filter chips -->
+<div class="filter-bar" id="filterRow"></div>
+
+<!-- Main content -->
+<main id="mainContent">
+  <div id="panel-all"      class="panel active"></div>
+  <div id="panel-code"     class="panel"></div>
+  <div id="panel-mcq"      class="panel"></div>
+  <div id="panel-uml"      class="panel"></div>
+  <div id="panel-progress" class="panel"><div id="progressGrid"></div></div>
 </main>
 
-<!-- Entry detail modal -->
-<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal()"></div>
-<div class="modal" id="modal">
-  <div class="modal-header">
-    <div class="modal-title" id="modalTitle"></div>
-    <button class="modal-close" onclick="closeModal()">✕</button>
+<!-- Import modal -->
+<div class="overlay" id="importOverlay">
+  <div class="dialog">
+    <div class="dialog-header">
+      <span class="dialog-title">⊕ import entry</span>
+      <button class="dialog-close" onclick="closeImport()">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-hint">// paste the JSON payload Claude generated after your exercise</div>
+      <textarea id="importInput" class="dialog-textarea" placeholder='{ "type": "code", "title": "...", "phase": "...", ... }'></textarea>
+      <div id="importError" class="dialog-error"></div>
+      <div class="dialog-actions">
+        <button class="btn-primary" onclick="doImport()">save to vault</button>
+        <button class="btn-ghost" onclick="closeImport()">cancel</button>
+      </div>
+    </div>
   </div>
-  <div class="modal-body" id="modalBody"></div>
 </div>
 
-<!-- Toast -->
+<!-- Settings modal -->
+<div class="overlay" id="settingsOverlay">
+  <div class="dialog">
+    <div class="dialog-header">
+      <span class="dialog-title">⚙ settings</span>
+      <button class="dialog-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-hint">// GitHub fine-grained token (contents: read+write on dp-vault repo only)</div>
+      <div class="field">
+        <label class="field-label">github token</label>
+        <input type="password" id="cfgToken" class="field-input" placeholder="github_pat_...">
+      </div>
+      <div class="field">
+        <label class="field-label">repository</label>
+        <input type="text" id="cfgRepo" class="field-input" placeholder="username/dp-vault">
+      </div>
+      <div class="dialog-hint" style="margin-top:.75rem">
+        // token is stored in localStorage — never leaves your browser
+      </div>
+      <div class="dialog-actions" style="margin-top:1rem">
+        <button class="btn-primary" onclick="saveSettings()">connect</button>
+        <button class="btn-ghost" onclick="closeSettings()">cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div class="overlay" id="detailOverlay" onclick="closeDetailOuter(event)">
+  <div class="dialog dialog-wide">
+    <div class="dialog-header">
+      <span class="dialog-title" id="detailTitle"></span>
+      <button class="dialog-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="dialog-body" id="detailBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
-
-<!-- Config panel (shown when no API key) -->
-<div class="config-overlay" id="configOverlay">
-  <div class="config-card">
-    <div class="config-title">Connect your vault</div>
-    <div class="config-desc">Enter your JSONBin details to load your exercise data.</div>
-    <div class="config-field">
-      <label>JSONBin API Key (X-Master-Key)</label>
-      <input type="password" id="cfgApiKey" placeholder="$2b$10$...">
-    </div>
-    <div class="config-field">
-      <label>Bin ID</label>
-      <input type="text" id="cfgBinId" placeholder="64abc123...">
-    </div>
-    <div class="config-actions">
-      <button class="btn-primary" onclick="saveConfig()">Connect vault</button>
-    </div>
-    <div class="config-hint">
-      Don't have a JSONBin account? <a href="https://jsonbin.io" target="_blank">Create one free →</a>
-    </div>
-  </div>
-</div>
-
 <script src="app.js"></script>
 </body>
 </html>
