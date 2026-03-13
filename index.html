@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design Patterns Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <div class="brand-mark">⬡</div>
+      <div>
+        <div class="brand-name">Design Patterns <em>Vault</em></div>
+        <div class="brand-sub" id="headerSub">Loading your progress...</div>
+      </div>
+    </div>
+    <nav class="nav-tabs" id="navTabs">
+      <button class="nav-tab active" data-tab="all">All</button>
+      <button class="nav-tab" data-tab="code">Code</button>
+      <button class="nav-tab" data-tab="mcq">MCQ</button>
+      <button class="nav-tab" data-tab="uml">UML</button>
+      <button class="nav-tab" data-tab="progress">Progress</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats row -->
+  <section class="stats-row" id="statsRow">
+    <div class="stat-card" id="sc-total">
+      <div class="stat-num">—</div>
+      <div class="stat-label">Total exercises</div>
+    </div>
+    <div class="stat-card" id="sc-code">
+      <div class="stat-num">—</div>
+      <div class="stat-label">Code submissions</div>
+    </div>
+    <div class="stat-card" id="sc-mcq">
+      <div class="stat-num">—</div>
+      <div class="stat-label">MCQs answered</div>
+    </div>
+    <div class="stat-card accent" id="sc-score">
+      <div class="stat-num">—</div>
+      <div class="stat-label">MCQ accuracy</div>
+    </div>
+  </section>
+
+  <!-- Filter chips -->
+  <div class="filter-row" id="filterRow"></div>
+
+  <!-- Content panels -->
+  <div id="panel-all"   class="panel active"></div>
+  <div id="panel-code"  class="panel"></div>
+  <div id="panel-mcq"   class="panel"></div>
+  <div id="panel-uml"   class="panel"></div>
+  <div id="panel-progress" class="panel">
+    <div class="progress-grid" id="progressGrid"></div>
+  </div>
+
+</main>
+
+<!-- Entry detail modal -->
+<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal()"></div>
+<div class="modal" id="modal">
+  <div class="modal-header">
+    <div class="modal-title" id="modalTitle"></div>
+    <button class="modal-close" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body" id="modalBody"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Config panel (shown when no API key) -->
+<div class="config-overlay" id="configOverlay">
+  <div class="config-card">
+    <div class="config-title">Connect your vault</div>
+    <div class="config-desc">Enter your JSONBin details to load your exercise data.</div>
+    <div class="config-field">
+      <label>JSONBin API Key (X-Master-Key)</label>
+      <input type="password" id="cfgApiKey" placeholder="$2b$10$...">
+    </div>
+    <div class="config-field">
+      <label>Bin ID</label>
+      <input type="text" id="cfgBinId" placeholder="64abc123...">
+    </div>
+    <div class="config-actions">
+      <button class="btn-primary" onclick="saveConfig()">Connect vault</button>
+    </div>
+    <div class="config-hint">
+      Don't have a JSONBin account? <a href="https://jsonbin.io" target="_blank">Create one free →</a>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
