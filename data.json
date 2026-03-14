@@ -10,6 +10,19 @@
       "answer": "Single Responsibility Principle — the class has more than one reason to change",
       "correct": true,
       "explanation": "UserManager has three separate reasons to change: auth logic, email templates, and DB schema. SRP says a class should have only one reason to change."
+    },
+    {
+      "type": "code",
+      "title": "Implement INotifier — SMSNotifier & EmailNotifier",
+      "phase": "Phase 1 — Foundations",
+      "topic": "Coupling & Cohesion",
+      "ts": 1741911600000,
+      "question": "Implement SMSNotifier and EmailNotifier satisfying INotifier. Write a notify() free function that accepts INotifier& and calls send().",
+      "answer": "Two concrete classes inheriting INotifier, overriding send() with correct const std::string& signature and override keyword. notify() accepts INotifier& — decoupled from concrete type.",
+      "correct": true,
+      "explanation": "override keyword enforces signature match at compile time. const& on parameters must match the interface exactly. The free function notify(INotifier&) demonstrates low coupling — caller doesn't know or care which notifier it receives.",
+      "content": "// Student dropped const, missing override, missing std::, msg not printed in output",
+      "feedback": "Design intent correct. Three C++ hygiene issues: missing override, missing const on parameter, message not forwarded to output. All caught by compiler with override keyword."
     }
   ]
 }
