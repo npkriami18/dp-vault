@@ -1,3 +1,15 @@
 {
-  "entries": []
+  "entries": [
+    {
+      "type": "mcq",
+      "title": "SOLID warm-up — UserManager violation",
+      "phase": "Phase 2 — SOLID",
+      "topic": "SRP",
+      "ts": 1773486771010,
+      "question": "UserManager handles login, sends welcome emails, and writes to DB. Which SOLID principle does this most clearly violate?",
+      "answer": "Single Responsibility Principle — the class has more than one reason to change",
+      "correct": true,
+      "explanation": "UserManager has three separate reasons to change: auth logic, email templates, and DB schema. SRP says a class should have only one reason to change."
+    }
+  ]
 }
